@@ -240,6 +240,7 @@ class PaperId(BaseModel):
 class BibEntry(BaseModel):
     rid: str
     all_paper_ids: list[PaperId] = Field(default_factory=list)
+    label: str | None = None
 
 
 class Paper(BaseModel):
