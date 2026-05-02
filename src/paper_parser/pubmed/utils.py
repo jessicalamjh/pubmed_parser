@@ -146,16 +146,6 @@ def _citation_mark_int(el: etree._Element) -> int | None:
     return None
 
 
-def _rid_prefix_and_suffix_int(rid: str | None) -> tuple[str, int] | None:
-    if not rid:
-        return None
-    rid = rid.strip()
-    m = re.match(r"^(.*?)(\d+)$", rid)
-    if not m:
-        return None
-    return m.group(1), int(m.group(2))
-
-
 def _bibr_xref_like(template: etree._Element, rid: str, text: str) -> etree._Element:
     el = etree.Element(template.tag)
     for k, v in template.attrib.items():
@@ -175,7 +165,14 @@ def expand_bibr_citation_ranges(
     tail between them. Inferred ``rid`` values for inserted nodes must appear as keys in
     ``bibliography`` (from ``back/ref-list/ref/@id``); otherwise the range is left unchanged.
     """
-    bib_keys = bibliography.keys()
+    label2ref_id = {}
+    for rid, ref in bibliography.items():
+        if rid not in label2ref_id and ref.label:
+            label2ref_id[ref.label] = rid
+
+    if not label2ref_id:
+        return
+
     for parent in list(root.iter()):
         if len(parent) < 2:
             continue
@@ -186,30 +183,47 @@ def expand_bibr_citation_ranges(
             if not (_is_bibr_xref(a) and _is_bibr_xref(b)):
                 i -= 1
                 continue
+
             tail = a.tail or ""
             if not _BIBR_RANGE_TAIL_RE.fullmatch(tail):
                 i -= 1
                 continue
+
             n = _citation_mark_int(a)
             m_hi = _citation_mark_int(b)
             if n is None or m_hi is None or m_hi <= n + 1:
                 i -= 1
                 continue
-            ra = _rid_prefix_and_suffix_int(a.attrib.get("rid"))
-            rb = _rid_prefix_and_suffix_int(b.attrib.get("rid"))
-            if not ra or not rb or ra[0] != rb[0] or ra[1] != n or rb[1] != m_hi:
+
+            label_a = bibliography[a.attrib.get("rid")].label
+            label_b = bibliography[b.attrib.get("rid")].label
+            if label_a is None or label_b is None:
+                print(a.attrib.get("rid"), b.attrib.get("rid"))
+                print(label2ref_id)
+            if not label_a.isdigit() or not label_b.isdigit():
                 i -= 1
                 continue
-            prefix = ra[0]
-            inferred = [f"{prefix}{k}" for k in range(n + 1, m_hi)]
-            if not inferred or not all(r in bib_keys for r in inferred):
+
+            int_a = int(label_a)
+            int_b = int(label_b)
+            if int_b - int_a <= 1:
                 i -= 1
                 continue
+
+            inferred_labels = [str(x) for x in range(int_a + 1, int_b)]
+            if not inferred_labels:
+                i -= 1
+                continue
+            
             sep = _BIBR_EXPAND_SEP
             a.tail = sep
             insert_at = parent.index(b)
-            for off, k in enumerate(range(n + 1, m_hi)):
-                node = _bibr_xref_like(a, f"{ra[0]}{k}", str(k))
+            for off, inferred_label in enumerate(inferred_labels):
+                inferred_rid = label2ref_id.get(inferred_label)
+                if not inferred_rid:
+                    print(f"Unable to expand '{label_a}{tail}{label_b}' with {inferred_label=}")
+                    continue
+                node = _bibr_xref_like(a, inferred_rid, inferred_label)
                 node.tail = sep
                 parent.insert(insert_at + off, node)
             i -= 1

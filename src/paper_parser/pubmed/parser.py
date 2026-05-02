@@ -196,7 +196,11 @@ def extract_bibliography(x: str | etree._ElementTree) -> dict[str, BibEntry]:
             except Exception as e:
                 logger.warning(f"Failed to extract paper id from {pub_id_node=}; error={e}")
 
-        bibliography[rid] = BibEntry(rid=rid, all_paper_ids=all_paper_ids)
+        label = None
+        for child in node.getchildren():
+            if child.tag == "label":
+                label = child.text
+        bibliography[rid] = BibEntry(rid=rid, all_paper_ids=all_paper_ids, label=label)
     return bibliography
 
 
